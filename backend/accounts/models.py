@@ -5,6 +5,7 @@ from django.dispatch import receiver
 
 
 
+
 class MyUser(AbstractUser):
     is_employer = models.BooleanField(default=False)
 
@@ -28,12 +29,15 @@ class EmployerProfile(models.Model):
         return str(self.user)
 
 
-from job.models import Job
+from job.models import Job,Category
 
 
 class EmployeeProfile(models.Model):
     user = models.OneToOneField(MyUser, on_delete=models.CASCADE)
     saved_jobs = models.ManyToManyField(Job, blank=True)
+    predicted_category = models.ForeignKey(
+        Category, on_delete=models.SET_NULL, null=True, blank=True
+    )    
     title = models.CharField(max_length=200, blank=True, null=True)
     location = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length = 15)
@@ -53,4 +57,3 @@ def create_user_profile(sender, instance, created, **kwargs):
             EmployerProfile.objects.create(user=instance)
         else:
             EmployeeProfile.objects.create(user=instance)
-

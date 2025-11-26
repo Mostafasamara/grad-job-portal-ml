@@ -7,10 +7,14 @@ from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
 from accounts.models import MyUser , EmployerProfile ,EmployeeProfile
 from .serializers import EmployerProfileSerializer, MyUserSerializer,EmployeeProfileSerializer
 from django.utils.decorators import method_decorator
-from rest_framework.authentication import SessionAuthentication, BasicAuthentication 
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from .authentication import CsrfExemptSessionAuthentication
 from django.middleware.csrf import get_token
-
+import joblib
+import os
+import logging
+from job.models import Category
+import PyPDF2
 # باقي الكود كما هو، لكن استخدم CsrfExemptSessionAuthentication من الـ import الجديد
 class CsrfExemptSessionAuthentication(SessionAuthentication):
     def enforce_csrf(self, request):
@@ -34,12 +38,12 @@ class EmployeeProfileAPI(generics.RetrieveUpdateDestroyAPIView):
 class CkeckAuthenticatedView(APIView):
     permission_classes = (permissions.AllowAny,)
     authentication_classes = (CsrfExemptSessionAuthentication, BasicAuthentication)
-    
+
     def get(self, request,format=None):
         user = self.request.user
         try:
             isAuthenticated = user.is_authenticated
-            
+
             # إضافة معلومات debug
             response_data = {
                 'isAuthenticated': 'success' if isAuthenticated else 'error',
@@ -48,13 +52,13 @@ class CkeckAuthenticatedView(APIView):
                 'session_key': request.session.session_key,
                 'has_session': bool(request.session.session_key)
             }
-            
+
             if isAuthenticated:
                 response_data.update({
                     'email': user.email,
                     'is_employer': user.is_employer
                 })
-                
+
             return Response(response_data)
         except Exception as e:
             return Response({'error': f'Something went wrong: {str(e)}'})
@@ -93,7 +97,7 @@ class UserSignupView(APIView):
 class LoginView(APIView):
     permission_classes = {permissions.AllowAny,}
     authentication_classes = (CsrfExemptSessionAuthentication, BasicAuthentication)
-    
+
     def post(self,request,format=None):
         data = self.request.data
 
@@ -104,15 +108,15 @@ class LoginView(APIView):
                 # إجبار إنشاء session
                 if not request.session.session_key:
                     request.session.create()
-                
+
                 auth.login(request, user)
-                
+
                 # حفظ session بشكل صريح
                 request.session.save()
-                
+
                 return Response({
-                    'success': 'User authenticated', 
-                    'email': data['email'], 
+                    'success': 'User authenticated',
+                    'email': data['email'],
                     'is_employer': user.is_employer,
                     'user_id': user.id,
                     'session_key': request.session.session_key
@@ -138,10 +142,10 @@ class GetCSRFToken(APIView):
         # إجبار إنشاء session إذا لم يكن موجود
         if not request.session.session_key:
             request.session.create()
-        
+
         # الحصول على CSRF token
         csrf_token = get_token(request)
-        
+
         return Response({
             'success': 'CSRF cookie set',
             'csrfToken': csrf_token,
@@ -162,7 +166,7 @@ class DeleteUserView(APIView):
 class GetProfile(APIView):
     permission_classes = (permissions.AllowAny,)
     authentication_classes = (CsrfExemptSessionAuthentication, BasicAuthentication)
-    
+
     def get(self, request, format=None):
         user = self.request.user
 
@@ -213,6 +217,38 @@ class VisitProfile(APIView):
         except:
             return Response({'error': "something went wrong while retrieveing profile data"})
 
+def run_model_on_cv(file_path):
+    try:
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        MODEL_PATH = os.path.join(BASE_DIR, 'ml_models', 'model.joblib')
+        VECTORIZER_PATH = os.path.join(BASE_DIR, 'ml_models', 'vectorizer.joblib')
+        LABEL_ENCODER_PATH = os.path.join(BASE_DIR, 'ml_models', 'label_encoder.joblib')
+
+        model = joblib.load(MODEL_PATH)
+        vectorizer = joblib.load(VECTORIZER_PATH)
+
+        # ✅ Read PDF in binary mode and extract text
+        resume_text = ""
+        with open(file_path, 'rb') as f:
+            reader = PyPDF2.PdfReader(f)
+            for page in reader.pages:
+                resume_text += page.extract_text() or ""
+
+        if not resume_text.strip():
+            raise ValueError("No extractable text in PDF")
+
+        resume_vector = vectorizer.transform([resume_text])
+        pred_encoded = model.predict(resume_vector)[0]
+
+        if os.path.exists(LABEL_ENCODER_PATH):
+            le = joblib.load(LABEL_ENCODER_PATH)
+            return le.inverse_transform([pred_encoded])[0]
+        else:
+            return str(pred_encoded)
+
+    except Exception as e:
+        logger.exception("🔥 ML prediction failed for CV:")
+        return None
 
 
 class UpdateProfileView(APIView):
@@ -220,25 +256,38 @@ class UpdateProfileView(APIView):
 
     def put(self, request, format=None):
         user = self.request.user
-        
+
         if user.is_employer:
             profile = EmployerProfile.objects.get(user=user)
-            profile_serializer = EmployerProfileSerializer(profile, data=self.request.data, partial=True)
+            profile_serializer = EmployerProfileSerializer(profile, data=request.data, partial=True)
         else:
             profile = EmployeeProfile.objects.get(user=user)
-            profile_serializer = EmployeeProfileSerializer(profile, data=self.request.data, partial=True)
+            profile_serializer = EmployeeProfileSerializer(profile, data=request.data, partial=True)
 
-        user_serializer = MyUserSerializer(user, data=self.request.data, partial=True)
+        user_serializer = MyUserSerializer(user, data=request.data, partial=True)
 
-        if profile_serializer.is_valid():
-            if user_serializer.is_valid():
-                user_serializer.save()
-                profile_serializer.save()
-                return Response({"user": user_serializer.data, "profile": profile_serializer.data}, status=200)
-            else:
-                return Response(user_serializer.errors, status=400)
-        else:
-            return Response(profile_serializer.errors, status=400)
+        is_user_valid = user_serializer.is_valid()
+        is_profile_valid = profile_serializer.is_valid()
 
+        if is_user_valid and is_profile_valid:
+            user_serializer.save()
+            profile_serializer.save()
 
+        if 'cv' in request.FILES and not user.is_employer:
+            try:
+                predicted_name = run_model_on_cv(profile.cv.path)
+                if predicted_name:  # Only save if prediction is valid
+                    category_obj, _ = Category.objects.get_or_create(name=predicted_name)
+                    profile.predicted_category = category_obj
+                    profile.save(update_fields=['predicted_category'])
+                    profile_serializer = EmployeeProfileSerializer(profile)
+            except Exception as e:
+                logger.exception(f"Prediction failed: {e}")
 
+            return Response({"user": user_serializer.data, "profile": profile_serializer.data}, status=200)
+
+        # ✅ Only call .errors now that .is_valid() was run
+        return Response({
+            "user_errors": user_serializer.errors,
+            "profile_errors": profile_serializer.errors
+        }, status=400)

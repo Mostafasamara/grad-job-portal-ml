@@ -6,11 +6,13 @@ class MyUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = MyUser
         fields = ['id', 'first_name', 'last_name', 'username', 'email', 'is_employer']
-        
+
 
 
 class EmployerProfileSerializer(serializers.ModelSerializer):
     user = MyUserSerializer()
+    predicted_category_name = serializers.CharField(source='predicted_category.name', read_only=True)
+
     class Meta:
         model = EmployerProfile
         fields = '__all__'
