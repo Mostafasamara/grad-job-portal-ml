@@ -68,11 +68,12 @@ DATABASES={
       'ENGINE':'django.db.backends.postgresql_psycopg2',
       'NAME':'grad_project',
       'USER':'postgres',
-      'PASSWORD':'Mo-0193694967#',
+      'PASSWORD':'3562211',
       'HOST':'localhost',
       'PORT':'5432',
    }
 }
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
