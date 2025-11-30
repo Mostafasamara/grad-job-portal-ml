@@ -134,26 +134,35 @@ export const AnonApplyJob =
     }
   };
 
-export const loadJobs = () => async (dispatch) => {
-  const config = {
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
+  export const loadJobs = (includeAll = false) => async (dispatch) => {
+    const config = {
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        // If using JWT authentication, include the token
+        Authorization: `JWT ${localStorage.getItem("access")}`,
+      },
+      // If using session auth, include cookies
+      withCredentials: true,
+    };
+
+    const url = includeAll
+      ? "http://localhost:8000/jobs/api/jobs/?include_all=true"
+      : "http://localhost:8000/jobs/api/jobs/";
+
+    try {
+      const res = await axios.get(url, config);
+      dispatch({
+        type: LOAD_JOBS_SUCCESS,
+        payload: res.data,
+      });
+    } catch (err) {
+      dispatch({
+        type: LOAD_JOBS_FAIL,
+      });
+    }
   };
 
-  try {
-    const res = await axios.get("http://localhost:8000/jobs/api/jobs/", config);
-    dispatch({
-      type: LOAD_JOBS_SUCCESS,
-      payload: res.data,
-    });
-  } catch (err) {
-    dispatch({
-      type: LOAD_JOBS_FAIL,
-    });
-  }
-};
 
 export const loadJob = (id) => async (dispatch) => {
   const config = {

@@ -26,6 +26,7 @@ import { FilterJobs, SearchJobs } from "../actions/filters";
 import ChatbotDialog from "../components/ChatbotDialoge";
 import { loadProfile } from "../actions/profile";
 import setCurrentPage from "./../actions/setCurrentPage";
+import Switch from "@material-ui/core/Switch";
 
 const JobsList = ({
   filter,
@@ -121,6 +122,7 @@ const JobsList = ({
   const navigate = useNavigate();
   const [saveRemove, setSaveRemove] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [showRecommended, setShowRecommended] = useState(false);
 
   const [formData, setFormData] = useState({
     job_type: "",
@@ -131,10 +133,12 @@ const JobsList = ({
   const { job_type, experience, category } = formData;
 
   useEffect(() => {
-    loadJobs();
+    // When showRecommended is false, request all jobs (include_all=true).
+    // When true, omit the include_all flag to get recommended jobs.
+    loadJobs(!showRecommended);
     loadProfile();
     setIsLoaded(true);
-  }, [saveRemove]);
+  }, [saveRemove, showRecommended]);
 
   const onSubmit = (e) => {
     e.preventDefault();
@@ -163,6 +167,7 @@ const JobsList = ({
       <div style={{ display: "flex", justifyContent: "center" }}>
         <CircularProgress />
       </div>
+
     );
   } else {
     return (
@@ -266,6 +271,24 @@ const JobsList = ({
                     Filter Jobs
                   </Button>
                 </form>
+                <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginBottom: 20,
+                      }}
+                    >
+                      <Switch
+                        checked={showRecommended}
+                        onChange={(e) => setShowRecommended(e.target.checked)}
+                        name="showRecommended"
+                        color="primary"
+                      />
+                      <span style={{ marginLeft: 8 }}>
+                        {showRecommended ? "Showing recommended jobs" : "Showing all jobs"}
+                      </span>
+                    </div>
               </Paper>
             </Grid>
 
