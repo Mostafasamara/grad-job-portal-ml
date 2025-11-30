@@ -12,31 +12,65 @@ from rest_framework import generics, permissions
 
 from notifications.models import Notification
 
-from rest_framework.authentication import SessionAuthentication, BasicAuthentication 
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from accounts.authentication import CsrfExemptSessionAuthentication
+from rest_framework import generics, permissions
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from accounts.models import EmployeeProfile
+from .models import Job
+from .serializers import JobSerializer
 
 
 ''' Funcation Viwes '''
 @api_view(['GET'])
 def job_list_api(request):
     all_jobs = Job.objects.all()
-    data = JobSerializer(all_jobs , many = True).data 
+    data = JobSerializer(all_jobs , many = True).data
     return Response({'data':data})
 
 @api_view(['GET'])
 def job_detail_api(request , id):
     job_detail = Job.objects.get(id = id)
-    data = JobSerializer(job_detail).data 
+    data = JobSerializer(job_detail).data
     return Response({'data':data})
 
 
 ''' Generic Views '''
 
-class JobListApi(generics.ListAPIView):
-    permission_classes = (permissions.AllowAny,)
-    model = Job
-    queryset  = Job.objects.all()
+class JobListAPI(generics.ListAPIView):
     serializer_class = JobSerializer
+    permission_classes = (permissions.AllowAny,)
+    authentication_classes = (CsrfExemptSessionAuthentication, BasicAuthentication)
+
+    def get_queryset(self):
+        qs = Job.objects.all()
+
+        # normal filters from query params (job_type, experience, category, …)
+        job_type = self.request.query_params.get('job_type')
+        if job_type:
+            qs = qs.filter(job_type=job_type)
+
+        category_id = self.request.query_params.get('category')
+        if category_id:
+            qs = qs.filter(category_id=category_id)
+
+        # 👇 NEW: auto-filter by predicted_category (unless user asks to see all)
+        user = self.request.user
+        include_all = self.request.query_params.get('include_all')
+
+        if (
+            user.is_authenticated
+            and not user.is_employer
+            and include_all is None  # only auto-filter when include_all is NOT given
+        ):
+            try:
+                profile = EmployeeProfile.objects.get(user=user)
+                if profile.predicted_category:
+                    qs = qs.filter(category=profile.predicted_category)
+            except EmployeeProfile.DoesNotExist:
+                pass
+
+        return qs
 
 
 class AddJob(APIView):
@@ -94,20 +128,20 @@ class UserApplyJob(APIView):
                         job=job,
                         applicant=user,
                         full_name=f"{user.first_name} {user.last_name}"
-                        
+
                         )
-                    
+
                     employer=EmployerProfile.objects.get(user=job.owner)
                     employee=EmployeeProfile.objects.get(user=user)
-                    
+
                     application=Application.objects.last()
-                    
+
                     Notification.objects.create(
                         to_user=employer,
                         created_by=employee,
                         application=application,
                     )
-                    
+
 
                     return Response({'success': "application sent successfully"})
             else:
@@ -202,18 +236,18 @@ class JobListFilter(generics.ListAPIView):
     serializer_class = JobSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['job_type', 'experience', 'category']
-    
-        
-    
+
+
+
 class JobSearch(APIView):
     def get(self,request,format=None):
         queryset = Job.objects.all()
         title = request.GET.get('title', '')
         queryset = Job.objects.filter(title__icontains=title)
-        data = JobSerializer(queryset, many = True).data       
+        data = JobSerializer(queryset, many = True).data
         return Response({'job':data})
-    
- 
+
+
 class CategoryListApi(generics.ListAPIView):
     permission_classes = (permissions.AllowAny,)
     queryset  = Category.objects.all()
@@ -276,7 +310,7 @@ class UpdateApplicationStatus(APIView):
 
         application = Application.objects.get(id=id)
         serializer = ApplicationSerializer(application, data=data, partial=True)
-        
+
 
         if serializer.is_valid():
             serializer.save()
@@ -339,5 +373,3 @@ class GetJobApplications(APIView):
             return Response({"pending": pending, "accepted": accepted, "rejected": rejected})
         except Exception as e:
             return Response({"error": e.args})
-
-

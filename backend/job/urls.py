@@ -4,7 +4,7 @@ from . import api
 
 app_name = 'job'
 
-urlpatterns = [   
+urlpatterns = [
     # path('', views.job_list , name = 'job_list'),
     # path('add', views.add_job , name = 'add_job'),
     # path('<str:slug>', views.job_detail , name = 'job_detail'),
@@ -13,9 +13,9 @@ urlpatterns = [
     # ##API
     # path('api/jobs', api.job_list_api , name = 'job_list_api'),
     # path('api/jobs/<int:id>', api.job_detail_api , name = 'job_detail_api'),
-    
+
     ##Job API
-    path('api/jobs/', api.JobListApi.as_view() , name = 'JobsList'),
+    path('api/jobs/', api.JobListAPI.as_view() , name = 'JobsList'),
     path('api/jobs/add/', api.AddJob.as_view() , name = 'AddJob'),
     path('api/jobs/<int:id>/', api.JobDetail.as_view() , name = 'JobDetail'),
     path('api/jobs/filter/', api.JobListFilter.as_view() , name = 'JobsListFilter'),
@@ -23,7 +23,7 @@ urlpatterns = [
 
     ##Category API
     path('api/category/', api.CategoryListApi.as_view() , name = 'CategoriesList'),
-    
+
     ##Job Application API
     #apply for a job
     path('api/jobs/<int:job_id>/apply/', api.UserApplyJob.as_view() , name = 'UserApplyJob'),

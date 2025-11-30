@@ -13,17 +13,21 @@ from accounts.models import EmployeeProfile
 
 def job_list(request):
     job_list = Job.objects.all()
+    clear_filter = request.GET.get('clear_filter') == '1'
 
-    # If user is logged in and not an employer, try to filter based on predicted category
-    if request.user.is_authenticated and not request.user.is_employer:
+    predicted_category = None  # 👈 we’ll send this to the template
+
+    if request.user.is_authenticated and not getattr(request.user, "is_employer", False):
         try:
             profile = EmployeeProfile.objects.get(user=request.user)
             if profile.predicted_category:
-                job_list = job_list.filter(category=profile.predicted_category)
+                predicted_category = profile.predicted_category
+                # only filter when user did NOT click "Show all jobs"
+                if not clear_filter:
+                    job_list = job_list.filter(category=predicted_category)
         except EmployeeProfile.DoesNotExist:
-            pass  # fallback to all jobs if profile not found
+            pass
 
-    # Apply filter on top of (potentially filtered) queryset
     myfilter = JobFilter(request.GET, queryset=job_list)
     job_list = myfilter.qs
 
@@ -31,7 +35,12 @@ def job_list(request):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    context = {'jobs': page_obj, 'myfilter': myfilter}
+    context = {
+        'jobs': page_obj,
+        'myfilter': myfilter,
+        'skip_filter': clear_filter,
+        'predicted_category': predicted_category,  # 👈 new
+    }
     return render(request, 'job/job_list.html', context)
 
 

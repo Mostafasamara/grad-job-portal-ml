@@ -15,6 +15,10 @@ import os
 import logging
 from job.models import Category
 import PyPDF2
+
+logger = logging.getLogger(__name__)
+
+
 # باقي الكود كما هو، لكن استخدم CsrfExemptSessionAuthentication من الـ import الجديد
 class CsrfExemptSessionAuthentication(SessionAuthentication):
     def enforce_csrf(self, request):
@@ -220,32 +224,32 @@ class VisitProfile(APIView):
 def run_model_on_cv(file_path):
     try:
         BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        MODEL_PATH = os.path.join(BASE_DIR, 'ml_models', 'model.joblib')
-        VECTORIZER_PATH = os.path.join(BASE_DIR, 'ml_models', 'vectorizer.joblib')
-        LABEL_ENCODER_PATH = os.path.join(BASE_DIR, 'ml_models', 'label_encoder.joblib')
+        MODEL_PATH = os.path.join(BASE_DIR, 'ml_model', 'model.joblib')
+        VECTORIZER_PATH = os.path.join(BASE_DIR, 'ml_model', 'vectorizer.joblib')
+        LABEL_ENCODER_PATH = os.path.join(BASE_DIR, 'ml_model', 'label_encoder.joblib')
 
         model = joblib.load(MODEL_PATH)
         vectorizer = joblib.load(VECTORIZER_PATH)
 
-        # ✅ Read PDF in binary mode and extract text
+        # Read PDF and extract text
         resume_text = ""
         with open(file_path, 'rb') as f:
             reader = PyPDF2.PdfReader(f)
             for page in reader.pages:
                 resume_text += page.extract_text() or ""
-
         if not resume_text.strip():
             raise ValueError("No extractable text in PDF")
 
+        # Vectorize and predict
         resume_vector = vectorizer.transform([resume_text])
         pred_encoded = model.predict(resume_vector)[0]
 
+        # Decode label to string
         if os.path.exists(LABEL_ENCODER_PATH):
             le = joblib.load(LABEL_ENCODER_PATH)
             return le.inverse_transform([pred_encoded])[0]
         else:
             return str(pred_encoded)
-
     except Exception as e:
         logger.exception("🔥 ML prediction failed for CV:")
         return None
@@ -256,7 +260,7 @@ class UpdateProfileView(APIView):
 
     def put(self, request, format=None):
         user = self.request.user
-
+        # Select the right profile serializer
         if user.is_employer:
             profile = EmployerProfile.objects.get(user=user)
             profile_serializer = EmployerProfileSerializer(profile, data=request.data, partial=True)
@@ -265,28 +269,31 @@ class UpdateProfileView(APIView):
             profile_serializer = EmployeeProfileSerializer(profile, data=request.data, partial=True)
 
         user_serializer = MyUserSerializer(user, data=request.data, partial=True)
-
         is_user_valid = user_serializer.is_valid()
         is_profile_valid = profile_serializer.is_valid()
-
         if is_user_valid and is_profile_valid:
             user_serializer.save()
             profile_serializer.save()
 
-        if 'cv' in request.FILES and not user.is_employer:
-            try:
-                predicted_name = run_model_on_cv(profile.cv.path)
-                if predicted_name:  # Only save if prediction is valid
-                    category_obj, _ = Category.objects.get_or_create(name=predicted_name)
-                    profile.predicted_category = category_obj
-                    profile.save(update_fields=['predicted_category'])
-                    profile_serializer = EmployeeProfileSerializer(profile)
-            except Exception as e:
-                logger.exception(f"Prediction failed: {e}")
+        # Step 1: If a CV was uploaded, run the ML model
+        # if 'cv' in request.FILES and not user.is_employer:
+        #     try:
+        #         predicted_name = run_model_on_cv(profile.cv.path)    # load model and predict
+        #         if predicted_name:  # only proceed if prediction succeeded
+        #             category_obj, _ = Category.objects.get_or_create(name=predicted_name)
+        #             profile.predicted_category = category_obj
+        #             profile.save(update_fields=['predicted_category'])
+        #             # re-serialize profile to include the new category
+        #             profile_serializer = EmployeeProfileSerializer(profile)
+        #     except Exception as e:
+        #         logger.exception(f"Prediction failed: {e}")
+            # Return updated user/profile data
+            return Response({
+                "user": user_serializer.data,
+                "profile": profile_serializer.data
+            }, status=200)
 
-            return Response({"user": user_serializer.data, "profile": profile_serializer.data}, status=200)
-
-        # ✅ Only call .errors now that .is_valid() was run
+        # If no CV or validation errors, return errors (if any)
         return Response({
             "user_errors": user_serializer.errors,
             "profile_errors": profile_serializer.errors

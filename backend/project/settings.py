@@ -25,7 +25,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'bootstrap4',
 
-    'accounts',
+    'accounts.apps.AccountsConfig',
     'job',
     'blog',
     'contact',
