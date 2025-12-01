@@ -1,0 +1,34 @@
+import React from "react";
+import Container from "@material-ui/core/Container";
+import { makeStyles } from "@material-ui/core/styles";
+
+const useStyles = makeStyles((theme) => ({
+  root: {
+    display: "flex",
+  },
+  content: {
+    flexGrow: 1,
+    overflow: "auto",
+    [theme.breakpoints.up("sm")]: {
+      width: `calc(100% - 250px)`,
+    },
+  },
+  container: {
+    paddingTop: theme.spacing(1),
+    paddingBottom: theme.spacing(1),
+    position: "relative",
+  },
+}));
+
+export default function Content({ children }) {
+  const classes = useStyles();
+  return (
+    <div className={classes.root}>
+      <main className={classes.content}>
+        <Container maxWidth="xl" className={classes.container}>
+          {children}
+        </Container>
+      </main>
+    </div>
+  );
+}
